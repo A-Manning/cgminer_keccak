@@ -660,21 +660,21 @@ bool hex2bin(unsigned char *p, const char *hexstr, size_t len)
 
 bool fulltest(const unsigned char *hash, const unsigned char *target)
 {
-	unsigned char hash_swap[32], target_swap[32];
-	uint32_t *hash32 = (uint32_t *) hash_swap;
-	uint32_t *target32 = (uint32_t *) target_swap;
+	//unsigned char hash_swap[32], target_swap[32];
+	uint32_t *hash32 = (uint32_t *) hash;
+	uint32_t *target32 = (uint32_t *) target;
 	char *hash_str, *target_str;
 	bool rc = true;
 	int i;
 
-	swap256(hash_swap, hash);
-	swap256(target_swap, target);
+	//swap256(hash_swap, hash);
+	//swap256(target_swap, target);
 
 	for (i = 0; i < 32/4; i++) {
 		uint32_t h32tmp = htobe32(hash32[i]);
-		uint32_t t32tmp = htole32(target32[i]);
+		uint32_t t32tmp = htobe32(target32[i]);
 
-		target32[i] = swab32(target32[i]);	/* for printing */
+		//target32[i] = swab32(target32[i]);	/* for printing */
 
 		if (h32tmp > t32tmp) {
 			rc = false;
@@ -687,8 +687,8 @@ bool fulltest(const unsigned char *hash, const unsigned char *target)
 	}
 
 	if (opt_debug) {
-		hash_str = bin2hex(hash_swap, 32);
-		target_str = bin2hex(target_swap, 32);
+		hash_str = bin2hex(hash, 32);
+		target_str = bin2hex(target, 32);
 
 		applog(LOG_DEBUG, " Proof: %s\nTarget: %s\nTrgVal? %s",
 			hash_str,
@@ -1625,7 +1625,7 @@ static bool send_version(struct pool *pool, json_t *val)
 {
 	char s[RBUFSIZE];
 	int id = json_integer_value(json_object_get(val, "id"));
-	
+
 	if (!id)
 		return false;
 

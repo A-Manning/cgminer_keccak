@@ -18,7 +18,7 @@ typedef unsigned long long  UINT64;
 
 #define ROL(a, offset) ((a << offset) | (a >> (64-offset)))
 
-static const UINT64 KeccakF_RoundConstants[24] = 
+static const UINT64 KeccakF_RoundConstants[24] =
 {
 	0x0000000000000001ULL,
 	0x0000000000008082ULL,
@@ -73,7 +73,7 @@ void keccak1(unsigned char *out, const unsigned char *inraw, unsigned inrawlen)
 	UINT64 Esa, Ese, Esi, Eso, Esu;
 
 	memcpy(temp, inraw, inrawlen);
-	temp[inrawlen++] = 1;
+	temp[inrawlen++] = 6;
 	memset( temp+inrawlen, 0, 136 - inrawlen);
 	temp[136-1] |= 0x80;
 	const UINT64 *in = (const UINT64 *)temp;
@@ -316,21 +316,25 @@ static int crypto_hash( unsigned char *out, const unsigned char *in, unsigned in
 void Hash3(uint256 *pResult, unsigned char const *pbegin, unsigned char const *pend)
 {
 	uint256 hash1;
-	uint256 hash2;
+	//uint256 hash2;
 	crypto_hash((unsigned char*)&hash1, pbegin, (pend - pbegin) * sizeof(pbegin[0]));
-	crypto_hash((unsigned char*)&hash2, (unsigned char*)&hash1, sizeof(hash1));
-	*pResult = hash2;
+	//crypto_hash((unsigned char*)&hash2, (unsigned char*)&hash1, sizeof(hash1));
+	*pResult = hash1;
 }
 
 void keccak_regenhash(struct work *work)
 {
 	uint256 result;
-	Hash3(&result, &work->data[0], &work->data[80]);
+	Hash3(&result, &work->data[0], &work->data[100]);
 	memcpy(work->hash, &result, 32);
 }
 
 bool keccak_prepare_work(struct thr_info __maybe_unused *thr, struct work *work)
 {
-	memcpy(&work->blk.keccak_data[0], &work->data[0], 80);
+	memcpy(&work->blk.keccak_data[0], &work->data[0], 100);
+
+	for (int i=84; i<96; i++){
+		work->blk.keccak_data[i] = rand()%256;
+	}
 	return true;
 }

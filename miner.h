@@ -45,7 +45,7 @@ extern char *curly;
 
 #ifdef USE_KECCAK
 //#include "keccak.h"
-#define KECCAK_BUFFER_SIZE (20*4)
+#define KECCAK_BUFFER_SIZE (20*5)
 #endif
 
 #ifdef STDC_HEADERS
@@ -702,13 +702,13 @@ static inline void flip64(void *dest_p, const void *src_p)
 		dest[i] = swab32(src[i]);
 }
 
-static inline void flip80(void *dest_p, const void *src_p)
+static inline void flip100(void *dest_p, const void *src_p)
 {
 	uint32_t *dest = dest_p;
 	const uint32_t *src = src_p;
 	int i;
 
-	for (i = 0; i < 20; i++)
+	for (i = 0; i < 25; i++)
 		dest[i] = swab32(src[i]);
 }
 
@@ -1433,7 +1433,7 @@ struct work {
 	char		getwork_mode;
 };
 
-#ifdef USE_MODMINER 
+#ifdef USE_MODMINER
 struct modminer_fpga_state {
 	bool work_running;
 	struct work running_work;

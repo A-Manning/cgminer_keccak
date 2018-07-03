@@ -1,6 +1,6 @@
 #define ARGS_25(x) x ## 0, x ## 1, x ## 2, x ## 3, x ## 4, x ## 5, x ## 6, x ## 7, x ## 8, x ## 9, x ## 10, x ## 11, x ## 12, x ## 13, x ## 14, x ## 15, x ## 16, x ## 17, x ## 18, x ## 19, x ## 20, x ## 21, x ## 22, x ## 23, x ## 24
 
-__constant uint2 keccak_round_constants[24] = 
+__constant uint2 keccak_round_constants[24] =
 {
 	(uint2)(0x00000001,0x00000000), (uint2)(0x00008082,0x00000000),
 	(uint2)(0x0000808a,0x80000000), (uint2)(0x80008000,0x80000000),
@@ -72,7 +72,7 @@ void keccak_block_noabsorb(ARGS_25(uint2* s))
 {
 	uint2 m0,m1,m2,m3,m4,m5,m6;
 	RND(0);
-	for (int i = 1; i < 22; ++i) 
+	for (int i = 1; i < 22; ++i)
 	{
 		RND(i);
 		++i;
@@ -88,7 +88,7 @@ __attribute__((reqd_work_group_size(WORKSIZE, 1, 1)))
 __kernel void search(__global const uint2*restrict in, __global uint*restrict output)
 {
 	uint2 ARGS_25(state);
-	
+
 	state0 = in[0];
 	state1 = in[1];
 	state2 = in[2];
@@ -98,10 +98,12 @@ __kernel void search(__global const uint2*restrict in, __global uint*restrict ou
 	state6 = in[6];
 	state7 = in[7];
 	state8 = in[8];
-	state9 = (uint2)(in[9].x,get_global_id(0));
-	state10 = (uint2)(1,0);
-	state11 = 0;
-	state12 = 0;
+	state9 = in[9];
+	//state9 = (uint2)(in[9].x,get_global_id(0));
+	//state10 = (uint2)(1,0);
+	state10 = in[10];
+	state11 = in[11];
+	state12 = (uint2)(get_global_id(0),6);
 	state13 = 0;
 	state14 = 0;
 	state15 = 0;
@@ -114,9 +116,9 @@ __kernel void search(__global const uint2*restrict in, __global uint*restrict ou
 	state22 = 0;
 	state23 = 0;
 	state24 = 0;
-	
+
 	keccak_block_noabsorb(ARGS_25(&state));
-	
+/*
 	state4 = (uint2)(1,0);
 	state5 = 0;
 	state6 = 0;
@@ -138,13 +140,14 @@ __kernel void search(__global const uint2*restrict in, __global uint*restrict ou
 	state22 = 0;
 	state23 = 0;
 	state24 = 0;
-	
+
 	keccak_block_noabsorb(ARGS_25(&state));
-	
+*/
+
 #define FOUND (0x0F)
 #define SETFOUND(Xnonce) output[output[FOUND]++] = Xnonce
-        
-        if (state3.y == 0)
+
+        if (state0.x == 0)
         {
                 SETFOUND(get_global_id(0));
         }

@@ -2021,7 +2021,7 @@ static bool gbt_decode(struct pool *pool, json_t *res_val)
 static bool getwork_decode(json_t *res_val, struct work *work)
 {
 #ifdef USE_KECCAK
-	if (unlikely(!jobj_binary(res_val, "data", work->data, opt_keccak ? 80 : sizeof(work->data), true))) {
+	if (unlikely(!jobj_binary(res_val, "data", work->data, opt_keccak ? 100 : sizeof(work->data), true))) {
 		applog(LOG_ERR, "JSON inval data");
 		return false;
 	}
@@ -2725,7 +2725,7 @@ static bool submit_upstream_work(struct work *work, CURL *curl, bool resubmit)
 
 	/* build hex string */
 #ifdef USE_KECCAK
-	hexstr = bin2hex(work->data, opt_keccak ? 80 : sizeof(work->data));
+	hexstr = bin2hex(work->data, opt_keccak ? 100 : sizeof(work->data));
 #else
 	hexstr = bin2hex(work->data, sizeof(work->data));
 #endif
@@ -2733,10 +2733,10 @@ static bool submit_upstream_work(struct work *work, CURL *curl, bool resubmit)
 	/* build JSON-RPC request */
 	if (work->gbt) {
 		char *gbt_block, *varint;
-		unsigned char data[80];
+		unsigned char data[100];
 
-		flip80(data, work->data);
-		gbt_block = bin2hex(data, 80);
+		flip100(data, work->data);
+		gbt_block = bin2hex(data, 100);
 
 		if (work->gbt_txns < 0xfd) {
 			uint8_t val = work->gbt_txns;
@@ -3732,12 +3732,12 @@ static uint64_t share_diff(const struct work *work)
 static void regen_hash(struct work *work)
 {
 	uint32_t *data32 = (uint32_t *)(work->data);
-	unsigned char swap[80];
+	unsigned char swap[100];
 	uint32_t *swap32 = (uint32_t *)swap;
 	unsigned char hash1[32];
 
-	flip80(swap32, data32);
-	sha256(swap, 80, hash1);
+	flip100(swap32, data32);
+	sha256(swap, 100, hash1);
 	sha256(hash1, 32, (unsigned char *)(work->hash));
 }
 
@@ -3933,7 +3933,7 @@ int restart_wait(struct thr_info *thr, unsigned int mstime)
 
 	return rc;
 }
-	
+
 static void restart_threads(void)
 {
 	struct pool *cp = current_pool();
@@ -4009,29 +4009,31 @@ static int block_sort(struct block *blocka, struct block *blockb)
 
 static void set_blockdiff(const struct work *work)
 {
-	uint64_t *data64, d64, diff64;
+	uint32_t *data32, d32, diff32;
 	double previous_diff;
 	int bits_shift;
-	unsigned char bits[4], block_target[32];
-	
+	unsigned char *bits, block_target[32];
+
 	memset (block_target, 0x00, 32);
-	
-	bin_reverse(work->data + 72, bits, 4);
+
+	//memcpy(work->data + 80, bits, 4);
+	//bin_reverse(work->data + 80, bits, 4);
+	bits = work->data + 80;
 	bits_shift = 32 - (int)bits[0];
 	memcpy(block_target + bits_shift, bits + 1, 3);
 
 	if (opt_scrypt)
-		data64 = (uint64_t *)(block_target + 2);
+		data32 = (uint32_t *)(block_target + 2);
 	else
-		data64 = (uint64_t *)(block_target + 4);
-	d64 = bswap_64(*data64);
-	if (unlikely(!d64))
-		d64 = 1;
+		data32 = (uint32_t *)(block_target + 4);
+	d32 = bswap_32(*data32);
+	if (unlikely(!d32))
+		d32 = 1;
 
 	previous_diff = current_diff;
-	diff64 = diffone / d64;
-	suffix_string(diff64, block_diff, sizeof(block_diff), 0);
-	current_diff = (double)diffone / (double)d64;
+	diff32 = diffone / d32;
+	suffix_string(diff32, block_diff, sizeof(block_diff), 0);
+	current_diff = (double)diffone / (double)d32;
 	if (unlikely(current_diff != previous_diff))
 		applog(LOG_NOTICE, "Network diff set to %s", block_diff);
 }
@@ -6085,18 +6087,22 @@ void inc_hw_errors(struct thr_info *thr)
 
 bool test_nonce(struct work *work, uint32_t nonce)
 {
-	uint32_t *work_nonce = (uint32_t *)(work->data + 64 + 12);
+	uint32_t *work_nonce = (uint32_t *)(work->data + 96);
 	uint32_t *hash2_32 = (uint32_t *)work->hash2;
-	uint32_t diff1targ;
+	uint64_t diff1targ;
 
-	*work_nonce = htole32(nonce);
+	memcpy(work->data, work->blk.keccak_data, 96);
+	*work_nonce = nonce;
 
 	/* Do one last check before attempting to submit the work */
 	rebuild_hash(work);
-	flip32(hash2_32, work->hash);
-
-	diff1targ = opt_scrypt ? 0x0000ffffUL : 0;
-	return (be32toh(hash2_32[7]) <= diff1targ);
+	//flip32(hash2_32, work->hash);
+	//printf("TEST_NONCE\n");
+	memcpy(work->hash2, work->hash, 32);
+	diff1targ = 0;
+	return true;
+	//return (be64toh(hash2_32[7]) <= diff1targ);
+	return (be32toh(hash2_32[0]) <= diff1targ);
 }
 
 static void update_work_stats(struct thr_info *thr, struct work *work)
@@ -6115,6 +6121,7 @@ static void update_work_stats(struct thr_info *thr, struct work *work)
  * nonce adjusted. */
 void submit_tested_work(struct thr_info *thr, struct work *work)
 {
+	char *header_str, *target_str;
 	struct work *work_out;
 	update_work_stats(thr, work);
 
@@ -6122,6 +6129,11 @@ void submit_tested_work(struct thr_info *thr, struct work *work)
 		applog(LOG_INFO, "Share below target");
 		return;
 	}
+	header_str = bin2hex(work->data, 100);
+
+	applog(LOG_DEBUG, "WINNING_HEADER %s", header_str);
+
+	free(header_str);
 	work_out = copy_work(work);
 	submit_work_async(work_out);
 }
@@ -6945,7 +6957,7 @@ static void *watchpool_thread(void __maybe_unused *userdata)
 		}
 
 		cgsleep_ms(30000);
-			
+
 	}
 	return NULL;
 }
@@ -7078,7 +7090,7 @@ static void *watchdog_thread(void __maybe_unused *userdata)
 					temp, fanpercent, fanspeed, engineclock, memclock, vddc, activity, powertune);
 			}
 #endif
-			
+
 			/* Thread is waiting on getwork or disabled */
 			if (thr->getwork || *denable == DEV_DISABLED)
 				continue;
@@ -7642,7 +7654,7 @@ bool add_cgpu(struct cgpu_info *cgpu)
 {
 	static struct _cgpu_devid_counter *devids = NULL;
 	struct _cgpu_devid_counter *d;
-	
+
 	HASH_FIND_STR(devids, cgpu->drv->name, d);
 	if (d)
 		cgpu->device_id = ++d->lastid;
@@ -8195,7 +8207,7 @@ begin_bench:
 
 		cgpu->rolling = cgpu->total_mhashes = 0;
 	}
-	
+
 	cgtime(&total_tv_start);
 	cgtime(&total_tv_end);
 	get_datestamp(datestamp, sizeof(datestamp), &total_tv_start);
@@ -8263,7 +8275,7 @@ begin_bench:
 		quit(1, "tq_new failed for gpur_thr_id");
 	if (thr_info_create(thr, NULL, reinit_gpu, thr))
 		quit(1, "reinit_gpu thread create failed");
-#endif	
+#endif
 
 	/* Create API socket thread */
 	api_thr_id = 6;
