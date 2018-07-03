@@ -1,0 +1,134 @@
+From e9efb4bc7e488bd8917851f6e58ba05e6fbde553 Mon Sep 17 00:00:00 2001
+From: A L Manning <asher@zenprotocol.com>
+Date: Tue, 3 Jul 2018 22:21:52 +0300
+Subject: [PATCH] patch to work with cgminer-zp
+
+---
+ src/Api/Server.fs | 90 ++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 89 insertions(+), 1 deletion(-)
+
+diff --git a/src/Api/Server.fs b/src/Api/Server.fs
+index 82872e4..0851d3c 100644
+--- a/src/Api/Server.fs
++++ b/src/Api/Server.fs
+@@ -15,6 +15,7 @@ open Zen.Crypto
+ open Consensus.Crypto
+ open Logary.Message
+ open Api.Helpers
++open Consensus.Types
+ open FSharp.Data
+ open Hopac.Extensions.Seq
+ open FsBech32
+@@ -38,6 +39,31 @@ let parseConfirmations query reply get =
+         | true, confirmations -> get confirmations
+         | _ -> reply StatusCode.BadRequest (TextContent "invalid confirmations")
+ 
++let jsonRpcResult (result: JsonValue): JsonValue =
++    JsonValue.Record [| "result", result |]
++
++let jsonRpcError (errormsg: string): JsonValue =
++    JsonValue.Record [| "error", JsonValue.String errormsg |]
++
++let isGetWorkRequest: string -> bool = JsonValue.TryParse >> function
++    | None -> false
++    | Some json ->
++        match JsonExtensions.Properties json with
++        | [| ("method", JsonValue.String "getwork");
++             ("params", JsonValue.Array [||]);
++             ("id", JsonValue.Number _)|]
++            -> true
++        | _ -> false
++
++let isGetWorkSubmission: string -> bool = JsonValue.TryParse >> function
++    | None -> false
++    | Some json ->
++        match JsonExtensions.Properties json with
++        | [| ("method", JsonValue.String "getwork");
++             ("params", JsonValue.Array [|JsonValue.String _|]);
++             ("id", JsonValue.Number _)|]
++            -> true
++        | _ -> false
+ 
+ let handleRequest chain client (request,reply) =
+     let replyError error =
+@@ -313,7 +339,7 @@ let handleRequest chain client (request,reply) =
+             | FSharp.Core.Ok pkHash ->
+                 Blockchain.validateMinedBlockHeader client header pkHash
+                 match Block.validateHeader (Chain.getChainParameters chain) header with
+-                | Ok header ->
++                | Ok _ ->
+                     reply StatusCode.OK NoContent
+                 | Error error ->
+                     error
+@@ -498,6 +524,68 @@ let handleRequest chain client (request,reply) =
+ 
+ 
+         parseConfirmations query reply get
++
++    | Post("", Some jsonstring) when isGetWorkRequest jsonstring ->
++        match Wallet.getAddressPKHash client with
++        | FSharp.Core.Ok pkHash ->
++            let block = Blockchain.getBlockTemplate client pkHash
++            let bytes = Block.serialize block
++            let header, _ = Array.splitAt Block.HeaderSize bytes
++            let header = FsBech32.Base16.encode header
++                         |> JsonValue.String
++            let target = Difficulty.uncompress block.header.difficulty
++                         |> Hash.toString
++                         |> JsonValue.String
++
++            JsonValue.Record [| ("data", header); ("target", target) |]
++            |> jsonRpcResult
++            |> JsonContent
++            |> reply StatusCode.OK
++
++        | FSharp.Core.Error _ ->
++            jsonRpcError "invalid address"
++            |> JsonContent
++            |> reply StatusCode.OK
++
++    | Post("", Some jsonstring) when isGetWorkSubmission jsonstring ->
++        match Wallet.getAddressPKHash client with
++        | FSharp.Core.Error _ ->
++            jsonRpcError "invalid address"
++            |> JsonContent
++            |> reply StatusCode.OK
++        | FSharp.Core.Ok pkHash ->
++            let headerString=
++                (JsonValue.Parse jsonstring).GetProperty "params"
++                |> JsonExtensions.AsArray
++                |> Array.head
++                |> JsonExtensions.AsString
++            let header =
++                FsBech32.Base16.decode headerString
++                |> Option.bind Serialization.Header.deserialize
++
++            let jsonRpcResponse =
++                match header with
++                | None -> sprintf "BAD HEADER: \"%s\"" headerString
++                          |> jsonRpcError
++                | Some header ->
++                    let block = { Blockchain.getBlockTemplate client pkHash
++                                  with header=header }
++                    match Block.validate (Chain.getChainParameters chain) block with
++                    | Error _ -> sprintf "BAD HEADER: \"%s\"" headerString
++                                 |> jsonRpcError
++                    | Ok _->
++                        Blockchain.validateMinedBlock client block;
++                        eventX "New block mined: '{header}'"
++                        >> setField "header" headerString
++                        |> Log.info
++
++                        sprintf "ACCEPTED HEADER: %s" headerString
++                        |> JsonValue.String
++                        |> jsonRpcResult
++
++            JsonContent jsonRpcResponse
++            |> reply StatusCode.OK
++
+     | _ ->
+         reply StatusCode.NotFound NoContent
+ 
+-- 
+2.7.4
+
